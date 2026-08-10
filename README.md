@@ -4,9 +4,10 @@ A mobile-first Moroccan Darija party game built with React + Vite. The game runs
 
 ## Features
 
-- RTL Arabic/Darija interface.
+- Full Arabic/Darija, French, English, and Italian interfaces with an always-available language switcher.
+- The chosen language is saved locally, updates instantly, and automatically switches between RTL and LTR layouts.
 - Player setup with remove controls and 3-player minimum.
-- Category mode or Global mode using a Moroccan-friendly word bank.
+- Category mode or Global mode using a multilingual, Moroccan-friendly word bank.
 - One outsider by default, or two outsiders when there are at least 6 players.
 - Safe phone-passing reveal flow that hides each previous role.
 - Optional random question pairs where the same player never asks themselves.
