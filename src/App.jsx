@@ -6,13 +6,12 @@ import { WORD_PAIRS } from './data/wordPairs';
 import { LANGUAGES, translations } from './i18n/translations';
 import { buildQuestionPairQueue } from './utils/questionPairing';
 
-const screens = { welcome: 'welcome', setup: 'setup', reveal: 'reveal', discussion: 'discussion', voting: 'voting', result: 'result' };
+const screens = { welcome: 'welcome', setup: 'setup', reveal: 'reveal', discussion: 'discussion', voting: 'voting', mrWhiteGuess: 'mrWhiteGuess', result: 'result' };
 const DEFAULT_LANGUAGE = 'ar';
 const games = [{ id: 'intrus', nameKey: 'intrus', descriptionKey: 'intrusDescription', available: true }];
 const MODE_CARDS = [
   { id: 'classic', labelKey: 'classic', helpKey: 'classicHelp', icon: Shield, image: `${import.meta.env.BASE_URL}assets/games/intrus/classic-mode.png`, available: true },
   { id: 'undercover', labelKey: 'undercover', helpKey: 'undercoverHelp', icon: EyeOff, image: `${import.meta.env.BASE_URL}assets/games/intrus/undercover-mode.png`, available: true },
-  { id: 'mrWhite', labelKey: 'mrWhiteComingSoon', helpKey: null, icon: Sparkles, image: null, available: false },
 ];
 const CATEGORY_ICONS = {
   global: Globe,
@@ -67,6 +66,7 @@ function initialLanguage() {
 export default function App() {
   const [language, setLanguage] = useState(initialLanguage);
   const [screen, setScreen] = useState(screens.welcome);
+  const [setupStep, setSetupStep] = useState(1);
   const [players, setPlayers] = useState([]);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState('');
@@ -74,6 +74,7 @@ export default function App() {
   const [mode, setMode] = useState('classic');
   const [playStyle, setPlayStyle] = useState('questions');
   const [outsiderCount, setOutsiderCount] = useState(1);
+  const [enableMrWhite, setEnableMrWhite] = useState(false);
   const [game, setGame] = useState(null);
   const [revealIndex, setRevealIndex] = useState(0);
   const [isRoleVisible, setIsRoleVisible] = useState(false);
@@ -84,11 +85,13 @@ export default function App() {
   const [voteIndex, setVoteIndex] = useState(0);
   const [selectedVote, setSelectedVote] = useState('');
   const [isVoterReady, setIsVoterReady] = useState(false);
-  const [score, setScore] = useState({ group: 0, intrus: 0 });
+  const [mrWhiteGuess, setMrWhiteGuess] = useState('');
+  const [score, setScore] = useState({ group: 0, hidden: 0 });
 
   const direction = language === 'ar' ? 'rtl' : 'ltr';
   const currentPlayer = game?.order[revealIndex];
   const isCurrentOutsider = currentPlayer ? game.outsiders.includes(currentPlayer) : false;
+  const isCurrentMrWhite = currentPlayer === game?.mrWhitePlayer;
   const canUseTwoOutsiders = players.length >= 6;
   const resultType = game?.leaders?.length > 1 ? null : game?.groupWon ? 'group' : 'intrus';
   const selectedCategoryLabels = selectedCategories.map((item) => t(`categories.${item}`));
@@ -101,6 +104,10 @@ export default function App() {
 
   function roundWord() { return game?.normalWords[language] ?? ''; }
   function intrusWord() { return game?.intrusWords?.[language] ?? ''; }
+
+  function normalizeGuess(value) {
+    return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
 
   function toggleCategory(categoryId) {
     if (categoryId === 'global') {
@@ -149,6 +156,12 @@ export default function App() {
     const nextPlayers = players.filter((item) => item !== player);
     setPlayers(nextPlayers);
     if (nextPlayers.length < 6) setOutsiderCount(1);
+    if (nextPlayers.length < 4) setEnableMrWhite(false);
+  }
+
+  function selectMode(nextMode) {
+    setMode(nextMode);
+    if (nextMode !== 'undercover') setEnableMrWhite(false);
   }
 
   function startRound(samePlayers = players) {
@@ -166,7 +179,12 @@ export default function App() {
       normalWords = Object.fromEntries(LANGUAGES.map(({ code }) => [code, WORD_BANK[wordCategory][code][wordIndex]]));
     }
     const order = shuffle(samePlayers);
-    setGame({ order, wordCategory, normalWords, intrusWords, outsiders: shuffle(order).slice(0, outsiderCount), mode, playStyle });
+    const hasMrWhite = mode === 'undercover' && enableMrWhite && samePlayers.length >= 4;
+    const roleOrder = shuffle(order);
+    const effectiveOutsiderCount = hasMrWhite ? 1 : outsiderCount;
+    const outsiders = roleOrder.slice(0, effectiveOutsiderCount);
+    const mrWhitePlayer = hasMrWhite ? roleOrder[effectiveOutsiderCount] : null;
+    setGame({ order, wordCategory, normalWords, intrusWords, outsiders, mrWhitePlayer, enableMrWhite: hasMrWhite, mode, playStyle });
     setRevealIndex(0);
     setIsRoleVisible(false);
     setPair(null);
@@ -176,6 +194,7 @@ export default function App() {
     setVoteIndex(0);
     setSelectedVote('');
     setIsVoterReady(false);
+    setMrWhiteGuess('');
     setScreen(screens.reveal);
   }
 
@@ -197,10 +216,12 @@ export default function App() {
     setMode('classic');
     setPlayStyle('questions');
     setOutsiderCount(1);
+    setEnableMrWhite(false);
     setGame(null);
     setQuestionPairQueue([]);
     setLastQuestionPair(null);
-    setScore({ group: 0, intrus: 0 });
+    setMrWhiteGuess('');
+    setScore({ group: 0, hidden: 0 });
     setScreen(screens.welcome);
   }
 
@@ -221,9 +242,32 @@ export default function App() {
     finalVotes.forEach(({ target }) => { totals[target] += 1; });
     const highest = Math.max(...Object.values(totals));
     const leaders = Object.keys(totals).filter((player) => totals[player] === highest);
-    const groupWon = leaders.length === 1 && game.outsiders.includes(leaders[0]);
-    setGame((current) => ({ ...current, voteTotals: totals, leaders, groupWon }));
-    setScore((current) => ({ ...current, [groupWon ? 'group' : 'intrus']: current[groupWon ? 'group' : 'intrus'] + 1 }));
+    if (leaders.length > 1) {
+      setGame((current) => ({ ...current, voteTotals: totals, leaders, groupWon: false, resultReason: 'tie' }));
+      setScreen(screens.result);
+      return;
+    }
+    const votedPlayer = leaders[0];
+    if (game.enableMrWhite && votedPlayer === game.mrWhitePlayer) {
+      setGame((current) => ({ ...current, voteTotals: totals, leaders }));
+      setMrWhiteGuess('');
+      setScreen(screens.mrWhiteGuess);
+      return;
+    }
+    const groupWon = game.outsiders.includes(votedPlayer);
+    const resultReason = groupWon ? game.mode === 'undercover' ? 'caughtUndercover' : 'caughtClassic' : 'wrongVote';
+    setGame((current) => ({ ...current, voteTotals: totals, leaders, groupWon, resultReason }));
+    setScore((current) => ({ ...current, [groupWon ? 'group' : 'hidden']: current[groupWon ? 'group' : 'hidden'] + 1 }));
+    setScreen(screens.result);
+  }
+
+  function submitMrWhiteGuess(event) {
+    event.preventDefault();
+    if (!mrWhiteGuess.trim()) return;
+    const guessedCorrectly = normalizeGuess(mrWhiteGuess) === normalizeGuess(roundWord());
+    const groupWon = !guessedCorrectly;
+    setGame((current) => ({ ...current, groupWon, mrWhiteGuess, mrWhiteGuessResult: guessedCorrectly, resultReason: guessedCorrectly ? 'mrWhiteCorrect' : 'mrWhiteWrong' }));
+    setScore((current) => ({ ...current, [groupWon ? 'group' : 'hidden']: current[groupWon ? 'group' : 'hidden'] + 1 }));
     setScreen(screens.result);
   }
 
@@ -234,7 +278,13 @@ export default function App() {
     setPair(null);
     setQuestionPairQueue([]);
     setLastQuestionPair(null);
+    setSetupStep(1);
     setScreen(screens.welcome);
+  }
+
+  function openSetup() {
+    setSetupStep(1);
+    setScreen(screens.setup);
   }
 
   useEffect(() => {
@@ -260,10 +310,10 @@ export default function App() {
             <div className="games-grid">
               {games.map((item) => (
                 <article className="game-card" key={item.id}>
-                  <img className="game-card-image" src={intrusCover} alt={`${t('intrus')} cover art`} loading="lazy" decoding="async" />
+                  <div className="game-card-image-wrap"><img className="game-card-image" src={intrusCover} alt={`${t('intrus')} cover art`} loading="lazy" decoding="async" /></div>
                   <h2>{t(item.nameKey)}</h2>
                   <p>{t(item.descriptionKey)}</p>
-                  <button className="primary-btn full" disabled={!item.available} onClick={() => setScreen(screens.setup)}>{t('playIntrus')}</button>
+                  <button className="primary-btn full" disabled={!item.available} onClick={openSetup}>{t('playIntrus')}</button>
                 </article>
               ))}
             </div>
@@ -274,39 +324,50 @@ export default function App() {
         {screen !== screens.welcome && <button className="back-btn" onClick={goHome}>← <span>{t('backToGames')}</span></button>}
 
         {screen === screens.setup && (
-          <div className="fade-in">
-            <header className="section-header"><h2>{t('setupTitle')}</h2><p>{t('minimum')}</p></header>
-            {(score.group > 0 || score.intrus > 0) && <div className="score-strip"><strong>{t('scores')}</strong><span>{t('groupScore')} {score.group}</span><span>{t('intrusScore')} {score.intrus}</span></div>}
-            <form className="add-form" onSubmit={addPlayer}>
-              <input value={name} onChange={(event) => { setName(event.target.value); setNameError(''); }} placeholder={t('playerPlaceholder')} aria-label={t('playerPlaceholder')} aria-describedby={nameError ? 'name-error' : undefined} />
-              <button type="submit">{t('add')}</button>
-            </form>
-            {nameError && <p className="form-error" id="name-error" role="alert">{t(nameError)}</p>}
-            <div className="players-list">
-              {players.map((player) => <span className="player-pill" key={player}>{player}<button onClick={() => removePlayer(player)} aria-label={t('remove', { player })}>×</button></span>)}
-            </div>
-            <label className="field-label">{t('mode')}</label>
-            <div className="mode-grid">
+          <div className="fade-in setup-screen">
+            <header className="section-header setup-header"><span className="setup-eyebrow">{t('stepOf', { current: setupStep, total: 4 })}</span><h2>{t(`setupSteps.${setupStep}`)}</h2></header>
+            <nav className="setup-stepper" aria-label={t('setupProgress')}>
+              {[1, 2, 3, 4].map((step) => <button key={step} type="button" className={setupStep === step ? 'active' : setupStep > step ? 'complete' : ''} aria-current={setupStep === step ? 'step' : undefined} onClick={() => step < setupStep && setSetupStep(step)}><span>{setupStep > step ? '✓' : step}</span><small>{t(`setupStepShort.${step}`)}</small></button>)}
+            </nav>
+            {(score.group > 0 || score.hidden > 0) && <div className="score-strip"><strong>{t('scores')}</strong><span>{t('groupScore')} {score.group}</span><span>{t('hiddenScore')} {score.hidden}</span></div>}
+            <div className="setup-step-content" key={setupStep}>
+            {setupStep === 1 && <>
+              <p className="step-intro">{t('minimum')}</p>
+              <form className="add-form" onSubmit={addPlayer}>
+                <input value={name} onChange={(event) => { setName(event.target.value); setNameError(''); }} placeholder={t('playerPlaceholder')} aria-label={t('playerPlaceholder')} aria-describedby={nameError ? 'name-error' : undefined} />
+                <button type="submit">{t('add')}</button>
+              </form>
+              {nameError && <p className="form-error" id="name-error" role="alert">{t(nameError)}</p>}
+              <div className="players-list">
+                {players.map((player) => <span className="player-pill" key={player}>{player}<button type="button" onClick={() => removePlayer(player)} aria-label={t('remove', { player })}>×</button></span>)}
+              </div>
+            </>}
+            {setupStep === 2 && <div className="mode-grid">
               {MODE_CARDS.map((item) => {
                 const IconComponent = item.icon;
                 const isSelected = mode === item.id;
                 return (
-                  <button key={item.id} type="button" className={`mode-card ${isSelected ? 'selected' : ''} ${!item.available ? 'coming-soon' : ''}`} disabled={!item.available} onClick={() => item.available && setMode(item.id)}>
-                    {item.image ? <img className="option-card-image" src={item.image} alt={`${t(item.labelKey)} ${t('mode')}`} loading="lazy" decoding="async" /> : <div className="mode-icon-wrap"><IconComponent className="mode-icon" aria-hidden="true" /></div>}
+                  <button key={item.id} type="button" className={`mode-card ${isSelected ? 'selected' : ''}`} onClick={() => selectMode(item.id)}>
+                    {item.image ? <div className="option-card-image-wrap"><img className="option-card-image" src={item.image} alt={`${t(item.labelKey)} ${t('mode')}`} loading="lazy" decoding="async" /></div> : <div className="mode-icon-wrap"><IconComponent className="mode-icon" aria-hidden="true" /></div>}
                     <strong>{t(item.labelKey)}</strong>
-                    {item.helpKey ? <small>{t(item.helpKey)}</small> : <small>{t('mrWhiteComingSoon')}</small>}
+                    <small>{t(item.helpKey)}</small>
                   </button>
                 );
               })}
-            </div>
-            <label className="field-label">{t('playStyle')}</label>
-            <div className="option-grid">
+              {mode === 'undercover' && <button type="button" className={`mr-white-option ${enableMrWhite ? 'selected' : ''}`} disabled={players.length < 4} aria-pressed={enableMrWhite} onClick={() => { setEnableMrWhite((enabled) => !enabled); setOutsiderCount(1); }}>
+                <span className="mr-white-icon"><Sparkles aria-hidden="true" /></span>
+                <span><strong>{t('addMrWhite')}</strong><small>{t('mrWhiteDescription')}</small>{players.length < 4 && <em>{t('mrWhiteMinimum')}</em>}</span>
+                <span className="toggle" aria-hidden="true"><i /></span>
+              </button>}
+            </div>}
+            {setupStep === 3 && <div className="option-grid">
               {['questions', 'oneWord'].map((item) => {
                 const OptionIcon = item === 'questions' ? MessagesSquare : Quote;
-                return <button key={item} type="button" className={playStyle === item ? 'selected' : ''} onClick={() => setPlayStyle(item)}><img className="option-card-image" src={playStyleImages[item]} alt={`${t(item)} style`} loading="lazy" decoding="async" /><OptionIcon className="option-inline-icon" aria-hidden="true" /><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>;
+                return <button key={item} type="button" className={playStyle === item ? 'selected' : ''} onClick={() => setPlayStyle(item)}><div className="option-card-image-wrap"><img className="option-card-image" src={playStyleImages[item]} alt={`${t(item)} style`} loading="lazy" decoding="async" /></div><span className="option-title"><OptionIcon className="option-inline-icon" aria-hidden="true" /><strong>{t(item)}</strong></span><small>{t(`${item}Help`)}</small></button>;
               })}
-            </div>
-            <label className="field-label">{t('category')}</label>
+            </div>}
+            {setupStep === 4 && <>
+            <label className="field-label first-label">{t('category')}</label>
             <p className="helper-text">{t('selectCategoriesHint')}</p>
             <div className="category-grid">
               <button type="button" className={`category-chip global-chip ${selectedCategories.length === 0 ? 'selected' : ''}`} onClick={() => toggleCategory('global')}>
@@ -325,8 +386,14 @@ export default function App() {
             </div>
             {selectedCategoryLabels.length > 0 && <div className="selection-summary">{selectedCategoryLabels.join(' · ')}</div>}
             <label className="field-label">{t('outsiderCount')}</label>
-            <div className="segmented"><button className={outsiderCount === 1 ? 'selected' : ''} onClick={() => setOutsiderCount(1)}>1</button><button disabled={!canUseTwoOutsiders} className={outsiderCount === 2 ? 'selected' : ''} onClick={() => setOutsiderCount(2)}>2 {!canUseTwoOutsiders && `(${t('sixPlus')})`}</button></div>
-            <button className="primary-btn full" disabled={players.length < 3} onClick={() => startRound()}>{t('start')}</button>
+            <div className="segmented"><button className={outsiderCount === 1 ? 'selected' : ''} onClick={() => setOutsiderCount(1)}>1</button><button disabled={!canUseTwoOutsiders || enableMrWhite} className={outsiderCount === 2 ? 'selected' : ''} onClick={() => setOutsiderCount(2)}>2 {(!canUseTwoOutsiders || enableMrWhite) && `(${enableMrWhite ? t('mrWhiteUsesOne') : t('sixPlus')})`}</button></div>
+            <aside className="setup-summary"><strong>{t('summary')}</strong><div><span>{t('summaryPlayers')}</span><b>{players.length}</b></div><div><span>{t('summaryMode')}</span><b>{t(mode)}</b></div><div><span>{t('summaryStyle')}</span><b>{t(playStyle)}</b></div><div><span>{t('summaryCategories')}</span><b>{selectedCategories.length || t('allCategories')}</b></div><div><span>{t('summaryOutsiders')}</span><b>{enableMrWhite ? `1 + Mr White` : outsiderCount}</b></div></aside>
+            </>}
+            </div>
+            <div className="wizard-actions">
+              {setupStep > 1 && <button type="button" className="ghost-btn" onClick={() => setSetupStep((step) => step - 1)}>{t('back')}</button>}
+              {setupStep < 4 ? <button type="button" className="primary-btn" disabled={setupStep === 1 && players.length < 3} onClick={() => setSetupStep((step) => step + 1)}>{t('next')}</button> : <button type="button" className="primary-btn" disabled={players.length < 3} onClick={() => startRound()}>{t('start')}</button>}
+            </div>
           </div>
         )}
 
@@ -334,7 +401,7 @@ export default function App() {
           <div className="center-stack fade-in safe-card">
             <span className="badge">{revealIndex + 1} / {game.order.length}</span>
             <h2>{t('turn', { player: currentPlayer })}</h2>
-            {!isRoleVisible ? <button className="primary-btn" onClick={() => setIsRoleVisible(true)}>{t('revealRole')}</button> : <div className="role-box">{isCurrentOutsider && game.mode === 'classic' ? t('outsider') : t('normal', { word: isCurrentOutsider ? intrusWord() : roundWord() })}</div>}
+            {!isRoleVisible ? <button className="primary-btn" onClick={() => setIsRoleVisible(true)}>{t('revealRole')}</button> : <div className="role-box">{isCurrentMrWhite ? t('mrWhiteReveal') : isCurrentOutsider && game.mode === 'classic' ? t('outsider') : t('normal', { word: isCurrentOutsider ? intrusWord() : roundWord() })}</div>}
             {isRoleVisible && <button className="ghost-btn" onClick={nextReveal}>{t('hideNext')}</button>}
           </div>
         )}
@@ -342,7 +409,7 @@ export default function App() {
         {screen === screens.discussion && game && (
           <div className="fade-in">
             <header className="section-header"><h2>{t('discussion')}</h2><p>{t('selectedCategory', { category: t(`categories.${game.wordCategory}`) })}</p></header>
-            <ol className="rules">{t(game.playStyle === 'questions' ? 'questionRules' : 'oneWordRules').map((rule) => <li key={rule}>{rule}</li>)}</ol>
+            <ol className="rules">{t(game.enableMrWhite ? 'mrWhiteRules' : game.playStyle === 'questions' ? 'questionRules' : 'oneWordRules').map((rule) => <li key={rule}>{rule}</li>)}</ol>
             {game.playStyle === 'questions' && <p className="flow-note">{t('questionFlowHint')}</p>}
             {game.playStyle === 'questions' && pair && <div className="pair-card"><div>{t('pair', { asker: pair.asker, target: pair.target })}</div><button onClick={serveQuestionPair}>{t('anotherQuestion')}</button></div>}
             <button className="primary-btn full" onClick={() => setScreen(screens.voting)}>{t('startVoting')}</button>
@@ -351,7 +418,7 @@ export default function App() {
 
         {screen === screens.voting && game && (
           <div className="fade-in voting-screen">
-            <header className="section-header"><span className="badge">{voteIndex + 1} / {game.order.length}</span><h2>{t('voting')}</h2><p>{t('voteTurn', { player: game.order[voteIndex] })}</p></header>
+            <header className="section-header"><span className="badge">{voteIndex + 1} / {game.order.length}</span><h2>{t('voting')}</h2><p>{t('votePrompt')}</p><p>{t('voteTurn', { player: game.order[voteIndex] })}</p></header>
             {!isVoterReady ? (
               <div className="pass-card">
                 <span aria-hidden="true">📱</span>
@@ -369,18 +436,32 @@ export default function App() {
           </div>
         )}
 
+        {screen === screens.mrWhiteGuess && game && (
+          <div className="center-stack fade-in guess-screen">
+            <span className="badge">Mr White</span>
+            <h2>{t('mrWhiteCaught')}</h2>
+            <p className="subtitle">{t('mrWhiteGuessSubtitle')}</p>
+            <form className="guess-form" onSubmit={submitMrWhiteGuess}>
+              <input autoFocus value={mrWhiteGuess} onChange={(event) => setMrWhiteGuess(event.target.value)} placeholder={t('mrWhiteGuessPlaceholder')} aria-label={t('mrWhiteGuessPlaceholder')} />
+              <button className="primary-btn" disabled={!mrWhiteGuess.trim()}>{t('confirmGuess')}</button>
+            </form>
+          </div>
+        )}
+
         {screen === screens.result && game && (
           <div className="center-stack fade-in">
             <span className="badge">{t('result')}</span>
-            {resultType && <img className="result-illustration" src={resultImages[resultType]} alt={game.groupWon ? t('groupWins') : t('intrusWins')} loading="lazy" decoding="async" />}
+            {resultType && <div className="result-illustration-wrap"><img className="result-illustration" src={resultImages[resultType]} alt={game.groupWon ? t('groupWins') : t('intrusWins')} loading="lazy" decoding="async" /></div>}
             <h2>{game.leaders.length > 1 ? t('tie') : game.groupWon ? t('groupWins') : t('intrusWins')}</h2>
             <p className="subtitle">{t('mostVoted', { names: game.leaders.join(t('and')) })}</p>
+            {game.resultReason !== 'tie' && <p className="result-explanation">{t(`resultReasons.${game.resultReason}`)}</p>}
             <div className="result-details">
-              <div>{t('outsidersWere', { names: game.outsiders.join(t('and')) })}</div>
               <div>{t('normalWord', { word: roundWord() })}</div>
               {game.mode === 'undercover' && <div>{t('intrusWord', { word: intrusWord() })}</div>}
+              {game.enableMrWhite && <div>{t('mrWhiteWas', { player: game.mrWhitePlayer })}</div>}
+              <div className="role-reveal"><strong>{t('allRoles')}</strong>{game.order.map((player) => <span key={player}><b>{player}</b><em>{t(player === game.mrWhitePlayer ? 'roles.mrWhite' : game.outsiders.includes(player) ? game.mode === 'undercover' ? 'roles.undercover' : 'roles.outsider' : 'roles.civilian')}</em></span>)}</div>
             </div>
-            <div className="score-card"><strong>{t('scores')}</strong><span>{t('groupScore')}: {score.group}</span><span>{t('intrusScore')}: {score.intrus}</span></div>
+            <div className="score-card"><strong>{t('scores')}</strong><span>{t('groupScore')}: {score.group}</span><span>{t('hiddenScore')}: {score.hidden}</span></div>
             <button className="primary-btn" onClick={() => startRound(players)}>{t('samePlayers')}</button>
             <button className="ghost-btn" onClick={resetAll}>{t('newGame')}</button>
           </div>
