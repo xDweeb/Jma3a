@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { CATEGORIES, WORD_BANK } from './data/wordBank';
 import { WORD_PAIRS } from './data/wordPairs';
 import { LANGUAGES, translations } from './i18n/translations';
+import { buildQuestionPairQueue } from './utils/questionPairing';
 
 const screens = { welcome: 'welcome', setup: 'setup', reveal: 'reveal', discussion: 'discussion', voting: 'voting', result: 'result' };
 const DEFAULT_LANGUAGE = 'ar';
@@ -50,6 +51,8 @@ export default function App() {
   const [revealIndex, setRevealIndex] = useState(0);
   const [isRoleVisible, setIsRoleVisible] = useState(false);
   const [pair, setPair] = useState(null);
+  const [questionPairQueue, setQuestionPairQueue] = useState([]);
+  const [lastQuestionPair, setLastQuestionPair] = useState(null);
   const [votes, setVotes] = useState([]);
   const [voteIndex, setVoteIndex] = useState(0);
   const [selectedVote, setSelectedVote] = useState('');
@@ -70,6 +73,19 @@ export default function App() {
 
   function roundWord() { return game?.normalWords[language] ?? ''; }
   function intrusWord() { return game?.intrusWords?.[language] ?? ''; }
+
+  function serveQuestionPair() {
+    setQuestionPairQueue((currentQueue) => {
+      let queue = currentQueue;
+      if (queue.length === 0) queue = buildQuestionPairQueue(players, lastQuestionPair);
+      const [nextPair, ...rest] = queue;
+      if (nextPair) {
+        setPair(nextPair);
+        setLastQuestionPair(nextPair);
+      }
+      return rest;
+    });
+  }
 
   useEffect(() => {
     localStorage.setItem('jma3aLanguage', language);
@@ -118,6 +134,8 @@ export default function App() {
     setRevealIndex(0);
     setIsRoleVisible(false);
     setPair(null);
+    setQuestionPairQueue([]);
+    setLastQuestionPair(null);
     setVotes([]);
     setVoteIndex(0);
     setSelectedVote('');
@@ -129,17 +147,10 @@ export default function App() {
     setIsRoleVisible(false);
     if (revealIndex + 1 >= game.order.length) {
       setScreen(screens.discussion);
-      if (game.playStyle === 'questions') generatePair();
+      if (game.playStyle === 'questions') serveQuestionPair();
     } else {
       setRevealIndex(revealIndex + 1);
     }
-  }
-
-  function generatePair() {
-    const asker = pickRandom(players);
-    let target = pickRandom(players);
-    while (target === asker) target = pickRandom(players);
-    setPair({ asker, target });
   }
 
   function resetAll() {
@@ -151,6 +162,8 @@ export default function App() {
     setPlayStyle('questions');
     setOutsiderCount(1);
     setGame(null);
+    setQuestionPairQueue([]);
+    setLastQuestionPair(null);
     setScore({ group: 0, intrus: 0 });
     setScreen(screens.welcome);
   }
@@ -183,8 +196,15 @@ export default function App() {
     setRevealIndex(0);
     setIsRoleVisible(false);
     setPair(null);
+    setQuestionPairQueue([]);
+    setLastQuestionPair(null);
     setScreen(screens.welcome);
   }
+
+  useEffect(() => {
+    if (screen !== screens.discussion || !game || game.playStyle !== 'questions' || pair || players.length < 2) return;
+    serveQuestionPair();
+  }, [screen, game, pair, players, lastQuestionPair]);
 
   return (
     <main className="app-shell" dir={direction}>
@@ -260,7 +280,8 @@ export default function App() {
           <div className="fade-in">
             <header className="section-header"><h2>{t('discussion')}</h2><p>{t('selectedCategory', { category: t(`categories.${game.wordCategory}`) })}</p></header>
             <ol className="rules">{t(game.playStyle === 'questions' ? 'questionRules' : 'oneWordRules').map((rule) => <li key={rule}>{rule}</li>)}</ol>
-            {game.playStyle === 'questions' && pair && <div className="pair-card"><div>{t('pair', { asker: pair.asker, target: pair.target })}</div><button onClick={generatePair}>{t('anotherQuestion')}</button></div>}
+            {game.playStyle === 'questions' && <p className="flow-note">{t('questionFlowHint')}</p>}
+            {game.playStyle === 'questions' && pair && <div className="pair-card"><div>{t('pair', { asker: pair.asker, target: pair.target })}</div><button onClick={serveQuestionPair}>{t('anotherQuestion')}</button></div>}
             <button className="primary-btn full" onClick={() => setScreen(screens.voting)}>{t('startVoting')}</button>
           </div>
         )}
