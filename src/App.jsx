@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
+import { BriefcaseBusiness, BusFront, Cat, Clapperboard, Cpu, EyeOff, Gamepad2, Globe, GraduationCap, House, Leaf, MapPinned, MessagesSquare, Music4, Package, PlaneTakeoff, Quote, Shield, Smile, Sparkles, Trophy, UtensilsCrossed, UsersRound } from 'lucide-react';
 import { CATEGORIES, WORD_BANK } from './data/wordBank';
 import { WORD_PAIRS } from './data/wordPairs';
 import { LANGUAGES, translations } from './i18n/translations';
@@ -8,13 +9,35 @@ import { buildQuestionPairQueue } from './utils/questionPairing';
 const screens = { welcome: 'welcome', setup: 'setup', reveal: 'reveal', discussion: 'discussion', voting: 'voting', result: 'result' };
 const DEFAULT_LANGUAGE = 'ar';
 const games = [{ id: 'intrus', nameKey: 'intrus', descriptionKey: 'intrusDescription', available: true }];
+const MODE_CARDS = [
+  { id: 'classic', labelKey: 'classic', helpKey: 'classicHelp', icon: Shield, image: `${import.meta.env.BASE_URL}assets/games/intrus/classic-mode.png`, available: true },
+  { id: 'undercover', labelKey: 'undercover', helpKey: 'undercoverHelp', icon: EyeOff, image: `${import.meta.env.BASE_URL}assets/games/intrus/undercover-mode.png`, available: true },
+  { id: 'mrWhite', labelKey: 'mrWhiteComingSoon', helpKey: null, icon: Sparkles, image: null, available: false },
+];
+const CATEGORY_ICONS = {
+  global: Globe,
+  food: UtensilsCrossed,
+  animals: Cat,
+  objects: Package,
+  places: MapPinned,
+  jobs: BriefcaseBusiness,
+  school: GraduationCap,
+  home: House,
+  moroccanStreet: BusFront,
+  sport: Trophy,
+  tech: Cpu,
+  moviesTv: Clapperboard,
+  musicArt: Music4,
+  nature: Leaf,
+  travel: PlaneTakeoff,
+  emotionsActions: Smile,
+  moroccanCulture: UsersRound,
+  internetSocial: MessagesSquare,
+  characters: Gamepad2,
+};
 const assetBase = `${import.meta.env.BASE_URL}assets`;
 const appIcon = `${assetBase}/brand/jma3a-icon.png`;
 const intrusCover = `${assetBase}/games/intrus/intrus-cover.png`;
-const modeImages = {
-  classic: `${assetBase}/games/intrus/classic-mode.png`,
-  undercover: `${assetBase}/games/intrus/undercover-mode.png`,
-};
 const playStyleImages = {
   questions: `${assetBase}/games/intrus/questions-style.png`,
   oneWord: `${assetBase}/games/intrus/hint-style.png`,
@@ -32,6 +55,10 @@ function pickRandom(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+function Icon({ component: Component }) {
+  return <Component className="chip-icon" aria-hidden="true" />;
+}
+
 function initialLanguage() {
   const saved = localStorage.getItem('jma3aLanguage');
   return translations[saved] ? saved : DEFAULT_LANGUAGE;
@@ -43,7 +70,7 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState('');
-  const [category, setCategory] = useState('global');
+  const [selectedCategories, setSelectedCategories] = useState([]);
   const [mode, setMode] = useState('classic');
   const [playStyle, setPlayStyle] = useState('questions');
   const [outsiderCount, setOutsiderCount] = useState(1);
@@ -64,6 +91,7 @@ export default function App() {
   const isCurrentOutsider = currentPlayer ? game.outsiders.includes(currentPlayer) : false;
   const canUseTwoOutsiders = players.length >= 6;
   const resultType = game?.leaders?.length > 1 ? null : game?.groupWon ? 'group' : 'intrus';
+  const selectedCategoryLabels = selectedCategories.map((item) => t(`categories.${item}`));
 
   function t(key, values = {}) {
     const value = key.split('.').reduce((item, part) => item?.[part], translations[language]);
@@ -73,6 +101,14 @@ export default function App() {
 
   function roundWord() { return game?.normalWords[language] ?? ''; }
   function intrusWord() { return game?.intrusWords?.[language] ?? ''; }
+
+  function toggleCategory(categoryId) {
+    if (categoryId === 'global') {
+      setSelectedCategories([]);
+      return;
+    }
+    setSelectedCategories((current) => current.includes(categoryId) ? current.filter((item) => item !== categoryId) : [...current, categoryId]);
+  }
 
   function serveQuestionPair() {
     setQuestionPairQueue((currentQueue) => {
@@ -117,7 +153,7 @@ export default function App() {
 
   function startRound(samePlayers = players) {
     const source = mode === 'undercover' ? WORD_PAIRS : WORD_BANK;
-    const wordCategory = category === 'global' ? pickRandom(Object.keys(source)) : category;
+    const wordCategory = pickRandom(selectedCategories.length ? selectedCategories : Object.keys(source));
     let normalWords;
     let intrusWords = null;
     if (mode === 'undercover') {
@@ -157,7 +193,7 @@ export default function App() {
     setPlayers([]);
     setName('');
     setNameError('');
-    setCategory('global');
+    setSelectedCategories([]);
     setMode('classic');
     setPlayStyle('questions');
     setOutsiderCount(1);
@@ -250,17 +286,44 @@ export default function App() {
               {players.map((player) => <span className="player-pill" key={player}>{player}<button onClick={() => removePlayer(player)} aria-label={t('remove', { player })}>×</button></span>)}
             </div>
             <label className="field-label">{t('mode')}</label>
-            <div className="option-grid">
-              {['classic', 'undercover'].map((item) => <button key={item} className={mode === item ? 'selected' : ''} onClick={() => setMode(item)}><img className="option-card-image" src={modeImages[item]} alt={`${t(item)} mode`} loading="lazy" decoding="async" /><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
+            <div className="mode-grid">
+              {MODE_CARDS.map((item) => {
+                const IconComponent = item.icon;
+                const isSelected = mode === item.id;
+                return (
+                  <button key={item.id} type="button" className={`mode-card ${isSelected ? 'selected' : ''} ${!item.available ? 'coming-soon' : ''}`} disabled={!item.available} onClick={() => item.available && setMode(item.id)}>
+                    {item.image ? <img className="option-card-image" src={item.image} alt={`${t(item.labelKey)} ${t('mode')}`} loading="lazy" decoding="async" /> : <div className="mode-icon-wrap"><IconComponent className="mode-icon" aria-hidden="true" /></div>}
+                    <strong>{t(item.labelKey)}</strong>
+                    {item.helpKey ? <small>{t(item.helpKey)}</small> : <small>{t('mrWhiteComingSoon')}</small>}
+                  </button>
+                );
+              })}
             </div>
             <label className="field-label">{t('playStyle')}</label>
             <div className="option-grid">
-              {['questions', 'oneWord'].map((item) => <button key={item} className={playStyle === item ? 'selected' : ''} onClick={() => setPlayStyle(item)}><img className="option-card-image" src={playStyleImages[item]} alt={`${t(item)} style`} loading="lazy" decoding="async" /><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
+              {['questions', 'oneWord'].map((item) => {
+                const OptionIcon = item === 'questions' ? MessagesSquare : Quote;
+                return <button key={item} type="button" className={playStyle === item ? 'selected' : ''} onClick={() => setPlayStyle(item)}><img className="option-card-image" src={playStyleImages[item]} alt={`${t(item)} style`} loading="lazy" decoding="async" /><OptionIcon className="option-inline-icon" aria-hidden="true" /><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>;
+              })}
             </div>
             <label className="field-label">{t('category')}</label>
+            <p className="helper-text">{t('selectCategoriesHint')}</p>
             <div className="category-grid">
-              {CATEGORIES.map((item) => <button key={item.id} className={category === item.id ? 'selected' : ''} onClick={() => setCategory(item.id)}>{item.emoji} {t(`categories.${item.id}`)}</button>)}
+              <button type="button" className={`category-chip global-chip ${selectedCategories.length === 0 ? 'selected' : ''}`} onClick={() => toggleCategory('global')}>
+                <Globe className="chip-icon" aria-hidden="true" />
+                <span>{t('allCategories')}</span>
+              </button>
+              {CATEGORIES.filter((item) => item.id !== 'global').map((item) => {
+                const CategoryIcon = CATEGORY_ICONS[item.id] ?? Globe;
+                return (
+                  <button key={item.id} type="button" aria-pressed={selectedCategories.includes(item.id)} className={`category-chip ${selectedCategories.includes(item.id) ? 'selected' : ''}`} onClick={() => toggleCategory(item.id)}>
+                    <CategoryIcon className="chip-icon" aria-hidden="true" />
+                    <span>{t(`categories.${item.id}`)}</span>
+                  </button>
+                );
+              })}
             </div>
+            {selectedCategoryLabels.length > 0 && <div className="selection-summary">{selectedCategoryLabels.join(' · ')}</div>}
             <label className="field-label">{t('outsiderCount')}</label>
             <div className="segmented"><button className={outsiderCount === 1 ? 'selected' : ''} onClick={() => setOutsiderCount(1)}>1</button><button disabled={!canUseTwoOutsiders} className={outsiderCount === 2 ? 'selected' : ''} onClick={() => setOutsiderCount(2)}>2 {!canUseTwoOutsiders && `(${t('sixPlus')})`}</button></div>
             <button className="primary-btn full" disabled={players.length < 3} onClick={() => startRound()}>{t('start')}</button>
