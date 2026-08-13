@@ -36,6 +36,6 @@ This repository includes `.github/workflows/deploy.yml`. To deploy:
 2. In repository settings, enable **Pages** and choose **GitHub Actions** as the source.
 3. Push to the `main` branch. The workflow builds the Vite app and publishes `dist/` to GitHub Pages.
 
-The Vite config sets the Pages base path to `/Jam3a/` when the GitHub repository name is `Jam3a`, and `/` for local development.
+The Vite config sets the Pages base path to `/Jma3a/` when the GitHub repository name is `Jma3a`, and `/` for local development.
 
-Expected published URL: https://xdweeb.github.io/Jam3a/
+Expected published URL: https://xdweeb.github.io/Jma3a/
