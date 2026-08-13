@@ -1,10 +1,10 @@
-# برا السالفة / Bra Salfa
+# Jma3a
 
-A mobile-first Moroccan Darija party game built with React + Vite. The game runs fully in the browser with no backend, database, login, or network requirement after the static files are loaded.
+A mobile-first party-games hub built with React + Vite and created by [xdweb](https://github.com/xdweeb). Its first game is **Intrus**, where the group tries to identify the player who does not know the secret word. Jma3a runs fully in the browser with no backend, database, login, or network requirement after the static files are loaded.
 
 ## Features
 
-- Full Arabic/Darija, French, English, and Italian interfaces with an always-available language switcher.
+- Full Arabic/Darija, French, English, and Italian support with an always-available language switcher.
 - The chosen language is saved locally, updates instantly, and automatically switches between RTL and LTR layouts.
 - Player setup with remove controls and 3-player minimum.
 - Category mode or Global mode using a multilingual, Moroccan-friendly word bank.

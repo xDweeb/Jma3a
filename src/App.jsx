@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { CATEGORIES, WORD_BANK } from './data/wordBank';
+import { WORD_PAIRS } from './data/wordPairs';
 import { LANGUAGES, translations } from './i18n/translations';
 
-const screens = { welcome: 'welcome', setup: 'setup', reveal: 'reveal', discussion: 'discussion', result: 'result' };
+const screens = { welcome: 'welcome', setup: 'setup', reveal: 'reveal', discussion: 'discussion', voting: 'voting', result: 'result' };
 const DEFAULT_LANGUAGE = 'ar';
+const games = [{ id: 'intrus', nameKey: 'intrus', descriptionKey: 'intrusDescription', available: true }];
 
 function shuffle(items) {
   return [...items].sort(() => Math.random() - 0.5);
@@ -14,7 +16,7 @@ function pickRandom(items) {
 }
 
 function initialLanguage() {
-  const saved = localStorage.getItem('braSalfaLanguage');
+  const saved = localStorage.getItem('jma3aLanguage');
   return translations[saved] ? saved : DEFAULT_LANGUAGE;
 }
 
@@ -25,12 +27,18 @@ export default function App() {
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState('');
   const [category, setCategory] = useState('global');
-  const [usePairs, setUsePairs] = useState(true);
+  const [mode, setMode] = useState('classic');
+  const [playStyle, setPlayStyle] = useState('questions');
   const [outsiderCount, setOutsiderCount] = useState(1);
   const [game, setGame] = useState(null);
   const [revealIndex, setRevealIndex] = useState(0);
   const [isRoleVisible, setIsRoleVisible] = useState(false);
   const [pair, setPair] = useState(null);
+  const [votes, setVotes] = useState([]);
+  const [voteIndex, setVoteIndex] = useState(0);
+  const [selectedVote, setSelectedVote] = useState('');
+  const [isVoterReady, setIsVoterReady] = useState(false);
+  const [score, setScore] = useState({ group: 0, intrus: 0 });
 
   const direction = language === 'ar' ? 'rtl' : 'ltr';
   const currentPlayer = game?.order[revealIndex];
@@ -43,12 +51,11 @@ export default function App() {
     return Object.entries(values).reduce((text, [token, replacement]) => text.replaceAll(`{${token}}`, replacement), value);
   }
 
-  function roundWord() {
-    return game ? WORD_BANK[game.wordCategory][language][game.wordIndex] : '';
-  }
+  function roundWord() { return game?.normalWords[language] ?? ''; }
+  function intrusWord() { return game?.intrusWords?.[language] ?? ''; }
 
   useEffect(() => {
-    localStorage.setItem('braSalfaLanguage', language);
+    localStorage.setItem('jma3aLanguage', language);
     document.documentElement.lang = language;
     document.documentElement.dir = direction;
   }, [language, direction]);
@@ -76,13 +83,28 @@ export default function App() {
   }
 
   function startRound(samePlayers = players) {
-    const wordCategory = category === 'global' ? pickRandom(Object.keys(WORD_BANK)) : category;
-    const wordIndex = Math.floor(Math.random() * WORD_BANK[wordCategory][language].length);
+    const source = mode === 'undercover' ? WORD_PAIRS : WORD_BANK;
+    const wordCategory = category === 'global' ? pickRandom(Object.keys(source)) : category;
+    let normalWords;
+    let intrusWords = null;
+    if (mode === 'undercover') {
+      const selectedPair = pickRandom(WORD_PAIRS[wordCategory]);
+      const swap = Math.random() < 0.5;
+      normalWords = Object.fromEntries(LANGUAGES.map(({ code }) => [code, selectedPair[code][swap ? 1 : 0]]));
+      intrusWords = Object.fromEntries(LANGUAGES.map(({ code }) => [code, selectedPair[code][swap ? 0 : 1]]));
+    } else {
+      const wordIndex = Math.floor(Math.random() * WORD_BANK[wordCategory][language].length);
+      normalWords = Object.fromEntries(LANGUAGES.map(({ code }) => [code, WORD_BANK[wordCategory][code][wordIndex]]));
+    }
     const order = shuffle(samePlayers);
-    setGame({ order, wordCategory, wordIndex, outsiders: shuffle(order).slice(0, outsiderCount) });
+    setGame({ order, wordCategory, normalWords, intrusWords, outsiders: shuffle(order).slice(0, outsiderCount), mode, playStyle });
     setRevealIndex(0);
     setIsRoleVisible(false);
     setPair(null);
+    setVotes([]);
+    setVoteIndex(0);
+    setSelectedVote('');
+    setIsVoterReady(false);
     setScreen(screens.reveal);
   }
 
@@ -90,7 +112,7 @@ export default function App() {
     setIsRoleVisible(false);
     if (revealIndex + 1 >= game.order.length) {
       setScreen(screens.discussion);
-      if (usePairs) generatePair();
+      if (game.playStyle === 'questions') generatePair();
     } else {
       setRevealIndex(revealIndex + 1);
     }
@@ -108,9 +130,42 @@ export default function App() {
     setName('');
     setNameError('');
     setCategory('global');
-    setUsePairs(true);
+    setMode('classic');
+    setPlayStyle('questions');
     setOutsiderCount(1);
     setGame(null);
+    setScore({ group: 0, intrus: 0 });
+    setScreen(screens.welcome);
+  }
+
+  function submitVote() {
+    if (!selectedVote) return;
+    const nextVotes = [...votes, { voter: game.order[voteIndex], target: selectedVote }];
+    setVotes(nextVotes);
+    setSelectedVote('');
+    if (voteIndex + 1 < game.order.length) {
+      setVoteIndex(voteIndex + 1);
+      setIsVoterReady(false);
+    }
+    else finishVoting(nextVotes);
+  }
+
+  function finishVoting(finalVotes) {
+    const totals = Object.fromEntries(players.map((player) => [player, 0]));
+    finalVotes.forEach(({ target }) => { totals[target] += 1; });
+    const highest = Math.max(...Object.values(totals));
+    const leaders = Object.keys(totals).filter((player) => totals[player] === highest);
+    const groupWon = leaders.length === 1 && game.outsiders.includes(leaders[0]);
+    setGame((current) => ({ ...current, voteTotals: totals, leaders, groupWon }));
+    setScore((current) => ({ ...current, [groupWon ? 'group' : 'intrus']: current[groupWon ? 'group' : 'intrus'] + 1 }));
+    setScreen(screens.result);
+  }
+
+  function goHome() {
+    setGame(null);
+    setRevealIndex(0);
+    setIsRoleVisible(false);
+    setPair(null);
     setScreen(screens.welcome);
   }
 
@@ -125,17 +180,29 @@ export default function App() {
         </div>
 
         {screen === screens.welcome && (
-          <div className="center-stack fade-in">
-            <span className="badge">{t('badge')}</span>
+          <div className="hub-screen center-stack fade-in">
             <h1>{t('brand')}</h1>
             <p className="subtitle">{t('subtitle')}</p>
-            <button className="primary-btn" onClick={() => setScreen(screens.setup)}>{t('play')}</button>
+            <div className="games-grid">
+              {games.map((item) => (
+                <article className="game-card" key={item.id}>
+                  <span className="game-icon" aria-hidden="true">🕵️</span>
+                  <h2>{t(item.nameKey)}</h2>
+                  <p>{t(item.descriptionKey)}</p>
+                  <button className="primary-btn full" disabled={!item.available} onClick={() => setScreen(screens.setup)}>{t('playIntrus')}</button>
+                </article>
+              ))}
+            </div>
+            <a className="creator-credit home-credit" href="https://github.com/xdweeb" target="_blank" rel="noreferrer">{t('creator')}</a>
           </div>
         )}
+
+        {screen !== screens.welcome && <button className="back-btn" onClick={goHome}>← <span>{t('backToGames')}</span></button>}
 
         {screen === screens.setup && (
           <div className="fade-in">
             <header className="section-header"><h2>{t('setupTitle')}</h2><p>{t('minimum')}</p></header>
+            {(score.group > 0 || score.intrus > 0) && <div className="score-strip"><strong>{t('scores')}</strong><span>{t('groupScore')} {score.group}</span><span>{t('intrusScore')} {score.intrus}</span></div>}
             <form className="add-form" onSubmit={addPlayer}>
               <input value={name} onChange={(event) => { setName(event.target.value); setNameError(''); }} placeholder={t('playerPlaceholder')} aria-label={t('playerPlaceholder')} aria-describedby={nameError ? 'name-error' : undefined} />
               <button type="submit">{t('add')}</button>
@@ -144,11 +211,18 @@ export default function App() {
             <div className="players-list">
               {players.map((player) => <span className="player-pill" key={player}>{player}<button onClick={() => removePlayer(player)} aria-label={t('remove', { player })}>×</button></span>)}
             </div>
+            <label className="field-label">{t('mode')}</label>
+            <div className="option-grid">
+              {['classic', 'undercover'].map((item) => <button key={item} className={mode === item ? 'selected' : ''} onClick={() => setMode(item)}><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
+            </div>
+            <label className="field-label">{t('playStyle')}</label>
+            <div className="option-grid">
+              {['questions', 'oneWord'].map((item) => <button key={item} className={playStyle === item ? 'selected' : ''} onClick={() => setPlayStyle(item)}><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
+            </div>
             <label className="field-label">{t('category')}</label>
             <div className="category-grid">
               {CATEGORIES.map((item) => <button key={item.id} className={category === item.id ? 'selected' : ''} onClick={() => setCategory(item.id)}>{item.emoji} {t(`categories.${item.id}`)}</button>)}
             </div>
-            <label className="switch-row"><input type="checkbox" checked={usePairs} onChange={(event) => setUsePairs(event.target.checked)} /> {t('usePairs')}</label>
             <label className="field-label">{t('outsiderCount')}</label>
             <div className="segmented"><button className={outsiderCount === 1 ? 'selected' : ''} onClick={() => setOutsiderCount(1)}>1</button><button disabled={!canUseTwoOutsiders} className={outsiderCount === 2 ? 'selected' : ''} onClick={() => setOutsiderCount(2)}>2 {!canUseTwoOutsiders && `(${t('sixPlus')})`}</button></div>
             <button className="primary-btn full" disabled={players.length < 3} onClick={() => startRound()}>{t('start')}</button>
@@ -159,29 +233,56 @@ export default function App() {
           <div className="center-stack fade-in safe-card">
             <span className="badge">{revealIndex + 1} / {game.order.length}</span>
             <h2>{t('turn', { player: currentPlayer })}</h2>
-            {!isRoleVisible ? <button className="primary-btn" onClick={() => setIsRoleVisible(true)}>{t('revealRole')}</button> : <div className="role-box">{isCurrentOutsider ? t('outsider') : t('normal', { word: roundWord() })}</div>}
+            {!isRoleVisible ? <button className="primary-btn" onClick={() => setIsRoleVisible(true)}>{t('revealRole')}</button> : <div className="role-box">{isCurrentOutsider && game.mode === 'classic' ? t('outsider') : t('normal', { word: isCurrentOutsider ? intrusWord() : roundWord() })}</div>}
             {isRoleVisible && <button className="ghost-btn" onClick={nextReveal}>{t('hideNext')}</button>}
           </div>
         )}
 
         {screen === screens.discussion && game && (
           <div className="fade-in">
-            <header className="section-header"><h2>{t('discussion')}</h2><p>{t('selectedCategory', { category: t(`categories.${category}`) })}</p></header>
-            <ol className="rules">{t('rules').map((rule) => <li key={rule}>{rule}</li>)}</ol>
-            {usePairs && pair && <div className="pair-card"><div>{t('pair', { asker: pair.asker, target: pair.target })}</div><button onClick={generatePair}>{t('anotherQuestion')}</button></div>}
-            <button className="primary-btn full" onClick={() => setScreen(screens.result)}>{t('revealResult')}</button>
+            <header className="section-header"><h2>{t('discussion')}</h2><p>{t('selectedCategory', { category: t(`categories.${game.wordCategory}`) })}</p></header>
+            <ol className="rules">{t(game.playStyle === 'questions' ? 'questionRules' : 'oneWordRules').map((rule) => <li key={rule}>{rule}</li>)}</ol>
+            {game.playStyle === 'questions' && pair && <div className="pair-card"><div>{t('pair', { asker: pair.asker, target: pair.target })}</div><button onClick={generatePair}>{t('anotherQuestion')}</button></div>}
+            <button className="primary-btn full" onClick={() => setScreen(screens.voting)}>{t('startVoting')}</button>
+          </div>
+        )}
+
+        {screen === screens.voting && game && (
+          <div className="fade-in voting-screen">
+            <header className="section-header"><span className="badge">{voteIndex + 1} / {game.order.length}</span><h2>{t('voting')}</h2><p>{t('voteTurn', { player: game.order[voteIndex] })}</p></header>
+            {!isVoterReady ? (
+              <div className="pass-card">
+                <span aria-hidden="true">📱</span>
+                <p>{t('votePrivacy', { player: game.order[voteIndex] })}</p>
+                <button className="primary-btn full" onClick={() => setIsVoterReady(true)}>{t('readyToVote')}</button>
+              </div>
+            ) : (
+              <>
+                <div className="vote-grid">
+                  {players.map((player) => <button key={player} aria-pressed={selectedVote === player} className={selectedVote === player ? 'selected' : ''} onClick={() => setSelectedVote(player)}>{player}</button>)}
+                </div>
+                <button className="primary-btn full" disabled={!selectedVote} onClick={submitVote}>{voteIndex + 1 === game.order.length ? t('finishVoting') : t('confirmVote')}</button>
+              </>
+            )}
           </div>
         )}
 
         {screen === screens.result && game && (
           <div className="center-stack fade-in">
             <span className="badge">{t('result')}</span>
-            <h2>{t('outsidersWere', { names: game.outsiders.join(t('and')) })}</h2>
-            <div className="word-result">{t('wordWas', { word: roundWord() })}</div>
+            <h2>{game.leaders.length > 1 ? t('tie') : game.groupWon ? t('groupWins') : t('intrusWins')}</h2>
+            <p className="subtitle">{t('mostVoted', { names: game.leaders.join(t('and')) })}</p>
+            <div className="result-details">
+              <div>{t('outsidersWere', { names: game.outsiders.join(t('and')) })}</div>
+              <div>{t('normalWord', { word: roundWord() })}</div>
+              {game.mode === 'undercover' && <div>{t('intrusWord', { word: intrusWord() })}</div>}
+            </div>
+            <div className="score-card"><strong>{t('scores')}</strong><span>{t('groupScore')}: {score.group}</span><span>{t('intrusScore')}: {score.intrus}</span></div>
             <button className="primary-btn" onClick={() => startRound(players)}>{t('samePlayers')}</button>
             <button className="ghost-btn" onClick={resetAll}>{t('newGame')}</button>
           </div>
         )}
+        {screen !== screens.welcome && <a className="creator-credit app-footer" href="https://github.com/xdweeb" target="_blank" rel="noreferrer">{t('creator')}</a>}
       </section>
     </main>
   );
