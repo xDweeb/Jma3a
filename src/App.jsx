@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useState } from 'react';
 import { CATEGORIES, WORD_BANK } from './data/wordBank';
 import { WORD_PAIRS } from './data/wordPairs';
