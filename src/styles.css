@@ -69,7 +69,41 @@ h2 { margin: 0; font-size: clamp(1.8rem, 8vw, 3rem); line-height: 1.2; }
 .game-card { width: 100%; padding: 24px; border: 1px solid rgba(255,255,255,.18); border-radius: 26px; background: rgba(255,255,255,.1); text-align: start; }
 .game-card h2 { margin-top: 8px; }
 .game-card p { min-height: 3.4em; margin: 10px 0 0; color: #fed7aa; line-height: 1.7; }
-.game-icon { font-size: 2rem; }
+.app-icon,
+.game-card-image,
+.option-card-image,
+.result-illustration {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  border-radius: 18px;
+}
+.app-icon {
+  width: 68px;
+  height: 68px;
+  margin-bottom: 4px;
+  padding: 8px;
+  background: rgba(255,255,255,.12);
+}
+.game-card-image {
+  height: min(180px, 42vw);
+  margin-bottom: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.08);
+}
+.option-card-image {
+  height: 96px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.08);
+}
+.result-illustration {
+  max-width: 320px;
+  max-height: 220px;
+  margin: 4px auto 0;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.08);
+}
 .creator-credit { color: #fed7aa; font-size: .82rem; text-decoration: none; opacity: .72; transition: opacity .18s ease; }
 .creator-credit:hover { opacity: 1; text-decoration: underline; }
 .home-credit { margin-top: auto; padding-top: 16px; }
@@ -108,7 +142,7 @@ button:not(:disabled):active { transform: scale(.98); }
 }
 .category-grid button.selected, .segmented button.selected, .option-grid button.selected, .vote-grid button.selected { color: #431407; background: #fbbf24; }
 .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.option-grid button { display: grid; gap: 6px; text-align: start; }
+.option-grid button { display: grid; gap: 6px; text-align: start; align-items: start; }
 .option-grid small { line-height: 1.35; opacity: .8; }
 .vote-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .vote-grid button { min-height: 58px; font-size: 1.05rem; overflow-wrap: anywhere; }

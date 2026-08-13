@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
 
-const repoName = 'imposter';
+const repoName = 'Jam3a';
+const isGitHubPagesBuild = process.env.GITHUB_REPOSITORY?.endsWith(`/${repoName}`);
 
 export default defineConfig({
-  base: process.env.GITHUB_REPOSITORY?.endsWith(`/${repoName}`) ? `/${repoName}/` : '/',
+  base: isGitHubPagesBuild ? `/${repoName}/` : '/',
 });

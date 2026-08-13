@@ -6,6 +6,21 @@ import { LANGUAGES, translations } from './i18n/translations';
 const screens = { welcome: 'welcome', setup: 'setup', reveal: 'reveal', discussion: 'discussion', voting: 'voting', result: 'result' };
 const DEFAULT_LANGUAGE = 'ar';
 const games = [{ id: 'intrus', nameKey: 'intrus', descriptionKey: 'intrusDescription', available: true }];
+const assetBase = `${import.meta.env.BASE_URL}assets`;
+const appIcon = `${assetBase}/brand/jma3a-icon.png`;
+const intrusCover = `${assetBase}/games/intrus/intrus-cover.png`;
+const modeImages = {
+  classic: `${assetBase}/games/intrus/classic-mode.png`,
+  undercover: `${assetBase}/games/intrus/undercover-mode.png`,
+};
+const playStyleImages = {
+  questions: `${assetBase}/games/intrus/questions-style.png`,
+  oneWord: `${assetBase}/games/intrus/hint-style.png`,
+};
+const resultImages = {
+  group: `${assetBase}/games/intrus/group-wins.png`,
+  intrus: `${assetBase}/games/intrus/intrus-wins.png`,
+};
 
 function shuffle(items) {
   return [...items].sort(() => Math.random() - 0.5);
@@ -44,6 +59,7 @@ export default function App() {
   const currentPlayer = game?.order[revealIndex];
   const isCurrentOutsider = currentPlayer ? game.outsiders.includes(currentPlayer) : false;
   const canUseTwoOutsiders = players.length >= 6;
+  const resultType = game?.leaders?.length > 1 ? null : game?.groupWon ? 'group' : 'intrus';
 
   function t(key, values = {}) {
     const value = key.split('.').reduce((item, part) => item?.[part], translations[language]);
@@ -181,12 +197,13 @@ export default function App() {
 
         {screen === screens.welcome && (
           <div className="hub-screen center-stack fade-in">
+            <img className="app-icon" src={appIcon} alt={`${t('brand')} icon`} loading="lazy" decoding="async" />
             <h1>{t('brand')}</h1>
             <p className="subtitle">{t('subtitle')}</p>
             <div className="games-grid">
               {games.map((item) => (
                 <article className="game-card" key={item.id}>
-                  <span className="game-icon" aria-hidden="true">🕵️</span>
+                  <img className="game-card-image" src={intrusCover} alt={`${t('intrus')} cover art`} loading="lazy" decoding="async" />
                   <h2>{t(item.nameKey)}</h2>
                   <p>{t(item.descriptionKey)}</p>
                   <button className="primary-btn full" disabled={!item.available} onClick={() => setScreen(screens.setup)}>{t('playIntrus')}</button>
@@ -213,11 +230,11 @@ export default function App() {
             </div>
             <label className="field-label">{t('mode')}</label>
             <div className="option-grid">
-              {['classic', 'undercover'].map((item) => <button key={item} className={mode === item ? 'selected' : ''} onClick={() => setMode(item)}><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
+              {['classic', 'undercover'].map((item) => <button key={item} className={mode === item ? 'selected' : ''} onClick={() => setMode(item)}><img className="option-card-image" src={modeImages[item]} alt={`${t(item)} mode`} loading="lazy" decoding="async" /><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
             </div>
             <label className="field-label">{t('playStyle')}</label>
             <div className="option-grid">
-              {['questions', 'oneWord'].map((item) => <button key={item} className={playStyle === item ? 'selected' : ''} onClick={() => setPlayStyle(item)}><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
+              {['questions', 'oneWord'].map((item) => <button key={item} className={playStyle === item ? 'selected' : ''} onClick={() => setPlayStyle(item)}><img className="option-card-image" src={playStyleImages[item]} alt={`${t(item)} style`} loading="lazy" decoding="async" /><strong>{t(item)}</strong><small>{t(`${item}Help`)}</small></button>)}
             </div>
             <label className="field-label">{t('category')}</label>
             <div className="category-grid">
@@ -270,6 +287,7 @@ export default function App() {
         {screen === screens.result && game && (
           <div className="center-stack fade-in">
             <span className="badge">{t('result')}</span>
+            {resultType && <img className="result-illustration" src={resultImages[resultType]} alt={game.groupWon ? t('groupWins') : t('intrusWins')} loading="lazy" decoding="async" />}
             <h2>{game.leaders.length > 1 ? t('tie') : game.groupWon ? t('groupWins') : t('intrusWins')}</h2>
             <p className="subtitle">{t('mostVoted', { names: game.leaders.join(t('and')) })}</p>
             <div className="result-details">
